@@ -209,6 +209,31 @@ class PHPMailer
     public $MessageID = '';
 
     /**
+     * An ID to be used in DSN.
+     * If empty, MessageID will be used.
+     * Setting it in format "<id@domain>" is not required.
+     * @var string
+     */
+    public $EnvelopeID = '';
+
+    /**
+     * Is DSN enabled.
+     * @var bool
+     */
+    public $DSN = false;
+
+    /**
+     * Requested Delivery Status Notifications (DSN).
+     * Can be 'never' or comma separated combination of 'success', 'delay', 'failure'.
+     * If empty, defaults to 'delay,failure' by most MTAs.
+     *
+     * DSN are now supported by 'mail' and 'sendmail' mailers only.
+     *
+     * @var string
+     */
+    public $Notifications = '';
+
+    /**
      * The message Date to be used in the Date header.
      * If empty, the current date will be added.
      * @var string
@@ -1035,6 +1060,33 @@ class PHPMailer
     }
 
     /**
+     * Set DSN notifications.
+     * @see PHPMailer::$Notifications
+     * @param string|string[] $notifications
+     */
+    public function SetDSNNotifications($notifications)
+    {
+        $this->DSN = true;
+        if (is_array($notifications)) {
+            $notifications = implode(',', $notifications);
+        }
+        $this->Notifications = $notifications;
+    }
+
+    /**
+     * Set custom Message-ID header.
+     * Also set EnvelopeID if it is empty.
+     * @param string $messageId
+     */
+    public function SetMessageId($messageId)
+    {
+        $this->MessageID = $messageId;
+        if ($this->EnvelopeID === '') {
+            $this->EnvelopeID = $messageId;
+        }
+    }
+
+    /**
      * Return the Message-ID header of the last email.
      * Technically this is the value from the last time the headers were created,
      * but it's also the message ID of the last sent message except in
@@ -1044,6 +1096,29 @@ class PHPMailer
     public function getLastMessageID()
     {
         return $this->lastMessageID;
+    }
+
+    /**
+     * DSN params for mail() function or sendmail command line.
+     * @return string
+     */
+    protected function getDSNParams()
+    {
+        $notifications = $this->Notifications ? implode(',', array_map('trim', explode(',', $this->Notifications))) : null;
+        if (
+            $this->DSN && self::isShellSafe($notifications) && (
+                self::isShellSafe($this->EnvelopeID) ||
+                mb_ereg_match('^<[^<>]*>$', $this->EnvelopeID) && self::isShellSafe(mb_substr($this->EnvelopeID, 1, -1))
+        )) {
+            $params = null;
+            if (!empty($notifications)) {
+                $params .= ' -N '.$notifications;
+            }
+            if (!empty($this->EnvelopeID)) {
+                $params .= ' -V "'.$this->EnvelopeID.'"';
+            }
+            return mb_substr($params, 1);
+        }
     }
 
     /**
@@ -1367,9 +1442,9 @@ class PHPMailer
         // CVE-2016-10033, CVE-2016-10045: Don't pass -f if characters will be escaped.
         if (!empty($this->Sender) and self::isShellSafe($this->Sender)) {
             if ($this->Mailer == 'qmail') {
-                $sendmailFmt = '%s -f%s';
+                $sendmailFmt = '%s -f %s';
             } else {
-                $sendmailFmt = '%s -oi -f%s -t';
+                $sendmailFmt = '%s -oi -f %s -t';
             }
         } else {
             if ($this->Mailer == 'qmail') {
@@ -1380,7 +1455,11 @@ class PHPMailer
         }
 
         // TODO: If possible, this should be changed to escapeshellarg.  Needs thorough testing.
-        $sendmail = sprintf($sendmailFmt, escapeshellcmd($this->Sendmail), $this->Sender);
+        $sendmail = escapeshellcmd($this->Sendmail);
+        if (($dsn = $this->getDSNParams())) {
+            $sendmail .= ' '.$dsn;
+        }
+        $sendmail = sprintf($sendmailFmt, $sendmail, $this->Sender);
 
         if ($this->SingleTo) {
             foreach ($this->SingleToArray as $toAddr) {
@@ -1453,7 +1532,7 @@ class PHPMailer
             // All other characters have a special meaning in at least one common shell, including = and +.
             // Full stop (.) has a special meaning in cmd.exe, but its impact should be negligible here.
             // Note that this does permit non-Latin alphanumeric characters based on the current locale.
-            if (!ctype_alnum($c) && strpos('@_-.', $c) === false) {
+            if (!ctype_alnum($c) && strpos('@_-.,', $c) === false) {
                 return false;
             }
         }
@@ -1478,12 +1557,15 @@ class PHPMailer
         }
         $to = implode(', ', $toArr);
 
-        $params = null;
+        $params = $this->getDSNParams();
         //This sets the SMTP envelope sender which gets turned into a return-path header by the receiver
         if (!empty($this->Sender) and $this->validateAddress($this->Sender)) {
             // CVE-2016-10033, CVE-2016-10045: Don't pass -f if characters will be escaped.
             if (self::isShellSafe($this->Sender)) {
-                $params = sprintf('-f%s', $this->Sender);
+                if ($params) {
+                    $params .= ' ';
+                }
+                $params .= sprintf('-f %s', $this->Sender);
             }
         }
         if (!empty($this->Sender) and !ini_get('safe_mode') and $this->validateAddress($this->Sender)) {
@@ -2077,6 +2159,9 @@ class PHPMailer
             $this->lastMessageID = $this->MessageID;
         } else {
             $this->lastMessageID = sprintf('<%s@%s>', $this->uniqueid, $this->serverHostname());
+        }
+        if (empty($this->EnvelopeID)) {
+            $this->EnvelopeID = $this->lastMessageID;
         }
         $result .= $this->headerLine('Message-ID', $this->lastMessageID);
         if (!is_null($this->Priority)) {
