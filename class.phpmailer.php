@@ -1074,16 +1074,13 @@ class PHPMailer
     }
 
     /**
-     * Set uniqueid for Message-ID header.
-     * Also set EnvelopeID to same value if it is empty.
-     * @param string $id
+     * Returns message uniqueid.
+     * Will be empty if called before preSend or send.
+     * @return string
      */
-    public function SetUniqueId($id)
+    public function GetUniqueId()
     {
-        $this->uniqueid = $id;
-        if ($this->EnvelopeID === '') {
-            $this->EnvelopeID = $id;
-        }
+        return $this->uniqueid;
     }
 
     /**
