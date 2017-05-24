@@ -210,8 +210,8 @@ class PHPMailer
 
     /**
      * An ID to be used in DSN.
-     * If empty, MessageID will be used.
-     * Setting it in format "<id@domain>" is not required.
+     * If empty, PHPMailer::$uniqueid will be used.
+     * It is a simple string in arbitrary format.
      * @var string
      */
     public $EnvelopeID = '';
@@ -1074,15 +1074,15 @@ class PHPMailer
     }
 
     /**
-     * Set custom Message-ID header.
-     * Also set EnvelopeID if it is empty.
-     * @param string $messageId
+     * Set uniqueid for Message-ID header.
+     * Also set EnvelopeID to same value if it is empty.
+     * @param string $id
      */
-    public function SetMessageId($messageId)
+    public function SetUniqueId($id)
     {
-        $this->MessageID = $messageId;
+        $this->uniqueid = $id;
         if ($this->EnvelopeID === '') {
-            $this->EnvelopeID = $messageId;
+            $this->EnvelopeID = $id;
         }
     }
 
@@ -1105,17 +1105,13 @@ class PHPMailer
     protected function getDSNParams()
     {
         $notifications = $this->Notifications ? implode(',', array_map('trim', explode(',', $this->Notifications))) : null;
-        if (
-            $this->DSN && self::isShellSafe($notifications) && (
-                self::isShellSafe($this->EnvelopeID) ||
-                mb_ereg_match('^<[^<>]*>$', $this->EnvelopeID) && self::isShellSafe(mb_substr($this->EnvelopeID, 1, -1))
-        )) {
+        if ($this->DSN && self::isShellSafe($notifications) && self::isShellSafe($this->EnvelopeID)) {
             $params = null;
             if (!empty($notifications)) {
                 $params .= ' -N '.$notifications;
             }
             if (!empty($this->EnvelopeID)) {
-                $params .= ' -V "'.$this->EnvelopeID.'"';
+                $params .= ' -V '.$this->EnvelopeID;
             }
             return mb_substr($params, 1);
         }
