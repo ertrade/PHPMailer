@@ -2276,6 +2276,9 @@ class PHPMailer
         $body = '';
         //Create unique IDs and preset boundaries
         $this->uniqueid = $this->generateId();
+        if (empty($this->EnvelopeID)) {
+            $this->EnvelopeID = $this->uniqueid;
+        }
         $this->boundary[1] = 'b1_' . $this->uniqueid;
         $this->boundary[2] = 'b2_' . $this->uniqueid;
         $this->boundary[3] = 'b3_' . $this->uniqueid;
